@@ -29,11 +29,14 @@ import org.apache.shardingsphere.data.pipeline.core.ingest.record.FinishedRecord
 import org.apache.shardingsphere.data.pipeline.core.ingest.record.GroupedDataRecord;
 import org.apache.shardingsphere.data.pipeline.core.ingest.record.Record;
 import org.apache.shardingsphere.data.pipeline.core.util.ThreadUtil;
+import org.apache.shardingsphere.driver.jdbc.core.datasource.ShardingSphereDataSource;
 import org.apache.shardingsphere.scaling.core.common.exception.ScalingTaskExecuteException;
 import org.apache.shardingsphere.scaling.core.common.record.RecordUtil;
 import org.apache.shardingsphere.scaling.core.common.sqlbuilder.ScalingSQLBuilder;
 import org.apache.shardingsphere.scaling.core.config.ImporterConfiguration;
 import org.apache.shardingsphere.schedule.core.executor.AbstractLifecycleExecutor;
+import org.apache.shardingsphere.sharding.algorithm.keygen.SnowflakeKeyGenerateAlgorithm;
+import org.apache.shardingsphere.sharding.rule.ShardingRule;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -41,6 +44,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -165,12 +169,23 @@ public abstract class AbstractImporter extends AbstractLifecycleExecutor impleme
     }
     
     private void executeBatchInsert(final Connection connection, final List<DataRecord> dataRecords) throws SQLException {
+
+        // TODO: ADDCOLUMN 增加数据
+
+        Optional<ShardingRule> rule = dataSourceManager.getDataSource(importerConfig.getDataSourceConfig()).unwrap(ShardingSphereDataSource.class).getContextManager()
+                .getMetaDataContexts().getMetaData("").getRuleMetaData().getRules().stream()
+                .filter(each -> each instanceof ShardingRule).map(each -> (ShardingRule) each).findFirst();
+
         String insertSql = scalingSqlBuilder.buildInsertSQL(dataRecords.get(0));
         try (PreparedStatement ps = connection.prepareStatement(insertSql)) {
             ps.setQueryTimeout(30);
             for (DataRecord each : dataRecords) {
                 for (int i = 0; i < each.getColumnCount(); i++) {
-                    ps.setObject(i + 1, each.getColumn(i).getValue());
+                    if (each.getColumn(i).getName() == "pid") {
+                        ps.setObject(i + 1, rule.get().generateKey(each.getTableName()));
+                    } else {
+                        ps.setObject(i + 1, each.getColumn(i).getValue());
+                    }
                 }
                 ps.addBatch();
             }
