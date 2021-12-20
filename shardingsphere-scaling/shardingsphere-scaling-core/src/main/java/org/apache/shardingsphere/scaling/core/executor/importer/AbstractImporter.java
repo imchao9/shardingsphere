@@ -35,7 +35,6 @@ import org.apache.shardingsphere.scaling.core.common.record.RecordUtil;
 import org.apache.shardingsphere.scaling.core.common.sqlbuilder.ScalingSQLBuilder;
 import org.apache.shardingsphere.scaling.core.config.ImporterConfiguration;
 import org.apache.shardingsphere.schedule.core.executor.AbstractLifecycleExecutor;
-import org.apache.shardingsphere.sharding.algorithm.keygen.SnowflakeKeyGenerateAlgorithm;
 import org.apache.shardingsphere.sharding.rule.ShardingRule;
 
 import javax.sql.DataSource;
@@ -170,10 +169,10 @@ public abstract class AbstractImporter extends AbstractLifecycleExecutor impleme
     
     private void executeBatchInsert(final Connection connection, final List<DataRecord> dataRecords) throws SQLException {
 
-        // TODO: ADDCOLUMN 增加数据
+        // ADDCOLUMN 增加数据
 
         Optional<ShardingRule> rule = dataSourceManager.getDataSource(importerConfig.getDataSourceConfig()).unwrap(ShardingSphereDataSource.class).getContextManager()
-                .getMetaDataContexts().getMetaData("").getRuleMetaData().getRules().stream()
+                .getMetaDataContexts().getMetaData(connection.getSchema()).getRuleMetaData().getRules().stream()
                 .filter(each -> each instanceof ShardingRule).map(each -> (ShardingRule) each).findFirst();
 
         String insertSql = scalingSqlBuilder.buildInsertSQL(dataRecords.get(0));
@@ -181,7 +180,7 @@ public abstract class AbstractImporter extends AbstractLifecycleExecutor impleme
             ps.setQueryTimeout(30);
             for (DataRecord each : dataRecords) {
                 for (int i = 0; i < each.getColumnCount(); i++) {
-                    if (each.getColumn(i).getName() == "pid") {
+                    if ("pid".equalsIgnoreCase(each.getColumn(i).getName())) {
                         ps.setObject(i + 1, rule.get().generateKey(each.getTableName()));
                     } else {
                         ps.setObject(i + 1, each.getColumn(i).getValue());
