@@ -34,6 +34,8 @@ import org.apache.shardingsphere.data.pipeline.core.record.RecordUtil;
 import org.apache.shardingsphere.data.pipeline.core.util.ThreadUtil;
 import org.apache.shardingsphere.data.pipeline.spi.importer.Importer;
 import org.apache.shardingsphere.data.pipeline.spi.sqlbuilder.PipelineSQLBuilder;
+import org.apache.shardingsphere.driver.jdbc.core.datasource.ShardingSphereDataSource;
+import org.apache.shardingsphere.sharding.rule.ShardingRule;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -41,6 +43,7 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -167,12 +170,22 @@ public abstract class AbstractImporter extends AbstractLifecycleExecutor impleme
     }
     
     private void executeBatchInsert(final Connection connection, final List<DataRecord> dataRecords) throws SQLException {
+
+        Optional<ShardingRule> rule = dataSourceManager.getDataSource(importerConfig.getDataSourceConfig()).unwrap(ShardingSphereDataSource.class).getContextManager()
+                .getMetaDataContexts().getMetaData(connection.getSchema()).getRuleMetaData().getRules().stream()
+                .filter(each -> each instanceof ShardingRule).map(each -> (ShardingRule) each).findFirst();
+
+
         String insertSql = pipelineSqlBuilder.buildInsertSQL(dataRecords.get(0));
         try (PreparedStatement ps = connection.prepareStatement(insertSql)) {
             ps.setQueryTimeout(30);
             for (DataRecord each : dataRecords) {
                 for (int i = 0; i < each.getColumnCount(); i++) {
-                    ps.setObject(i + 1, each.getColumn(i).getValue());
+                    if ("pk_id".equalsIgnoreCase(each.getColumn(i).getName())) {
+                        ps.setObject(i + 1, rule.get().generateKey(each.getTableName()));
+                    } else {
+                        ps.setObject(i + 1, each.getColumn(i).getValue());
+                    }
                 }
                 ps.addBatch();
             }
